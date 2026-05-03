@@ -8,7 +8,7 @@ train_fraction: 0.5
 # Training
 num_epochs: 20000
 substeps_per_dt: 1
-dt_eval: 0.01
+dt_eval: 0.002
 integrator: v
 loss_type: geom_sinkhorn
 geom_p: 2

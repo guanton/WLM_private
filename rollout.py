@@ -169,6 +169,7 @@ def train_rollout_anchor_p0_randk(
         epoch_callback: Optional[Callable[[int, int, float, float], None]] = None,
         fixed_k: bool = False,
         subsample_targets: bool = True,
+        k_ramp_fraction: float = 0.0,
 ):
     """
     Random-horizon rollout training, which always begins rollout from t=0.
@@ -210,12 +211,19 @@ def train_rollout_anchor_p0_randk(
 
     t0_val = float(time_grid[0].item())
 
+    # after:
+    use_ramp = float(k_ramp_fraction) > 0.0
+    if use_ramp:
+        ramp_epochs = max(1, int(k_ramp_fraction * num_epochs))
+        k_ramp_step = float(ramp_epochs) / float(K_max)
+
     for epoch in range(num_epochs):
         optimizer.zero_grad(set_to_none=True)
-
-        # sample random horizon k in {1,...,K_max}
         if fixed_k:
             k = K_max
+        elif use_ramp:
+            k_max_cur = min(int(epoch / k_ramp_step) + 1, K_max)
+            k = int(torch.randint(1, k_max_cur + 1, (1,), device=device).item())
         else:
             k = int(torch.randint(1, K_max + 1, (1,), device=device).item())
 

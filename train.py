@@ -295,6 +295,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Rollout knobs
     p.add_argument("--num-epochs", type=int, default=10000)
+    p.add_argument("--k-ramp-fraction", type=float, default=0.0,
+                   help="Fraction of epochs over which k_max ramps 1->K_max. 0 disables (default).")
+
     p.add_argument("--dt-base", type=float, default=None, help="Overrides dt from bundle meta if set")
     p.add_argument("--substeps-per-dt", type=int, default=1) # for rollouts during training
     p.add_argument("--max-train-steps", type=int, default=None,
@@ -304,7 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--subsample-targets", action=argparse.BooleanOptionalAction, default=True,
                    help="If set, target marginals are subsampled to match particles_per_batch "
                         "rows each (matched to x0).")
-    p.add_argument("--dt-sim", type=float, default=0.2) # note that dt between marginals is typically 1
+    p.add_argument("--dt-eval", type=float, default=0.2, help="dt used for evaluating model on test")
 
 
     # Loss
@@ -758,6 +761,7 @@ def main() -> None:
             geom_scaling=float(args.geom_scaling), geom_debias=bool(args.geom_debias),
             geom_backend=args.geom_backend, epoch_callback=epoch_cb,
             subsample_targets=bool(args.subsample_targets),
+            k_ramp_fraction=float(args.k_ramp_fraction),
         )
 
         step_idx += int(cur)
