@@ -132,71 +132,48 @@ def leapfrog_auto(
         return_all: bool = False,
         force_coeff=None,
         momentum=None,
-        t_start =0.0
+        t_start=0.0,
 ):
     """
-    Leapfrog with friction
+    Leapfrog (velocity-Verlet) integrator with friction.
     """
     x = x0
     v = v0
     t = t_start
     friction = resolve_gamma(friction)
 
-    # 1. Compute Momentum (Half-Step Decay)
-    # momentum here is the memory e^{-0.5 * friction * dt} of v_t during a leapfrog half update step over 0.5dt
-
-    # if momentum is None:
-    #     if isinstance(friction, torch.Tensor):
-    #         # --- TRAINING MODE (Tensor) ---
-    #         eff_friction = F.softplus(friction)
-    #         momentum = torch.exp(-0.5 * eff_friction * dt)
-    #     else:
-    #         # --- SIMULATION MODE (Float) ---
-    #         if friction < 1e-6:
-    #             momentum = 1.0 # zero damping
-    #         else:
-    #             momentum = np.exp(-0.5 * friction * dt)
+    # Half-step decay factor for velocity under friction γ:
+    #   momentum = exp(-γ · dt/2)
     if isinstance(friction, torch.Tensor):
-        # friction is already gamma (positive)
-        gamma = friction
-        momentum = torch.exp(-0.5 * gamma * dt)
+        momentum = torch.exp(-0.5 * friction * dt)
     else:
-        if friction < 1e-6:
-            momentum = 1.0
-        else:
-            momentum = np.exp(-0.5 * friction * dt)
+        momentum = 1.0 if friction < 1e-6 else np.exp(-0.5 * friction * dt)
 
-    # 2. Compute Force Coefficient (The "Push")
-    # We interpolate directly between the two physical limits:
-    #  - Inertial (momentum=1): coeff = dt/2 (Standard Verlet integration)
-    #  - Overdamped (momentum=0): coeff = 1.0  (Unit mobility v = F)
+    # Based on friction γ, to simulate at finite time, we interpolate force coefficient between the inertial (γ=0) and
+    # overdamped (γ→∞) limits:
+    #   - Inertial    (momentum=1): coeff = dt/2 (standard Verlet)
+    #   - Overdamped  (momentum=0): coeff = 1.0  (unit mobility, v = F)
     if force_coeff is None:
-        target_inertial = dt / 2.0
-        target_overdamped = 1.0
-
-        # Interpolate based on momentum remaining
-        force_coeff = momentum * target_inertial + (1.0 - momentum) * target_overdamped
+        force_coeff = momentum * (dt / 2.0) + (1.0 - momentum) * 1.0
 
     if return_all:
         history = [x]
 
-    for k in range(steps):
-        # A. Force Evaluation
-        accel_t = accel(x, t)
+    accel_t = accel(x, t)
 
-        # B. Half-step Velocity
-        # v = decay * v + coeff * Force
+    for _ in range(steps):
+        # Half-step velocity
         v_half = momentum * v + force_coeff * accel_t
 
-        # C. Full-step Position
+        # Full-step position
         x = x + dt * v_half
         t = t + dt
 
-        # D. Force at new position
-        accel_next_t = accel(x, t)
+        # Force at new position — also reused as next iteration's accel_t
+        accel_t = accel(x, t)
 
-        # E. Full-step Velocity
-        v = momentum * v_half + force_coeff * accel_next_t
+        # Full-step velocity
+        v = momentum * v_half + force_coeff * accel_t
 
         if return_all:
             history.append(x)

@@ -4,9 +4,7 @@ from typing import Literal, Optional
 
 Tensor = torch.Tensor
 
-# =============================================================
-# 0) Optional GeomLoss import (keep file usable without it)
-# =============================================================
+
 from geomloss import SamplesLoss
 import torch.nn as nn
 from typing import Any, Dict, Optional, Callable, List, Union, Tuple
@@ -14,9 +12,6 @@ from mechanics import pick_integrator
 from potential_energy_models import make_accel_from_potential
 
 
-# =============================================================
-# 2) GeomLoss (cached objects)
-# =============================================================
 _SINKHORN_CACHE = {}
 _GAUSSIAN_CACHE = {}
 _ENERGY_CACHE = {}

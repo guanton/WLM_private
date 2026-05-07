@@ -14,9 +14,9 @@ import torch.nn as nn
 # ============================================================
 from typing import Any, Dict, Optional, Sequence
 
-# ---------- Optional YAML (needed by _load_config) ----------
+
 try:
-    import yaml  # type: ignore
+    import yaml
 
     _HAS_YAML = True
 except Exception:

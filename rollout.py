@@ -99,7 +99,7 @@ def get_margs(
         x_idx = torch.arange(x.shape[0], device=device)
     x_t = x[x_idx]
 
-    # --- target marginals ---
+    # --- possibly subsample target marginals to match size fo rollout population ---
     if subsample_targets:
         Y_future = torch.stack(
             [
@@ -211,7 +211,7 @@ def train_rollout_anchor_p0_randk(
 
     t0_val = float(time_grid[0].item())
 
-    # after:
+
     use_ramp = float(k_ramp_fraction) > 0.0
     if use_ramp:
         ramp_epochs = max(1, int(k_ramp_fraction * num_epochs))

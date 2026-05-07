@@ -85,7 +85,7 @@ def snapshot_grid(X_np, times, n_cols=5, title="", color=C_BOID):
 
 
 def make_gif(X_dict, times, save_path="boids.gif",
-             frame_skip=2, fps=10, subsample=None, color=C_BOID,
+             frame_skip=2, fps=10, subsample=None, color=None,
              train_time=None):
     """
     Animated GIF with tikz-clean style. All panels use the same color.
@@ -104,6 +104,12 @@ def make_gif(X_dict, times, save_path="boids.gif",
                     W1 is displayed between first two datasets
     """
     labels = list(X_dict.keys())
+    if color is None:
+        _colors = ["tab:blue"] + ["tab:orange"] * (len(labels) - 1)
+    elif isinstance(color, list):
+        _colors = color
+    else:
+        _colors = [color] * len(labels)
     datasets = [v.copy() for v in X_dict.values()]
     n_rows = len(labels)
     is_comparison = (n_rows >= 2)
@@ -190,16 +196,6 @@ def make_gif(X_dict, times, save_path="boids.gif",
             if r > 0:
                 ax.tick_params(labelleft=False)
 
-            # # Forecast border indicator
-            # if is_forecast and is_comparison:
-            #     for spine in ax.spines.values():
-            #         spine.set_edgecolor("#D62828")
-            #         spine.set_linewidth(1.6)
-            # else:
-            #     for spine in ax.spines.values():
-            #         spine.set_edgecolor("#333333")
-            #         spine.set_linewidth(0.8)
-
         # Build suptitle
         phase = "Forecast" if is_forecast else "Train"
         title_parts = [f"$t = {t_val:.1f}$"]
@@ -266,8 +262,9 @@ def compare_snapshots(X_gt, X_wlm, times, n_cols=6, subsample=None,
 
         for row, (data, label) in enumerate([(X_gt_s, "GT"), (X_wlm_s, "WLM")]):
             ax = axes[row, col]
+            c = "tab:blue" if row == 0 else "tab:orange"
             ax.scatter(data[:, t_idx, 0], data[:, t_idx, 1],
-                       s=10, alpha=0.55, c=C_BOID, edgecolors="none", rasterized=True)
+                       s=10, alpha=0.55, c=c, edgecolors="none", rasterized=True)
             ax.set_xlim(*xlim)
             ax.set_ylim(*ylim)
             ax.set_aspect("equal")
