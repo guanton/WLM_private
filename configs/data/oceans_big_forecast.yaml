@@ -4,15 +4,9 @@
 
 mode: oceans
 
-# Path to the NPZ file. Paper run used vince_big_oceans_forecast.npz; the public
-# release ships it as big_oceans_forecast.npz. Verify your local file matches:
-#   python -c "import numpy as np; z=np.load('datasets/big_oceans_forecast.npz'); \
-#              print({k: z[k].shape for k in z.files})"
-# Expect ~(400, 11, 2) for positions and matching velocity tensor.
 npz_path: datasets/big_oceans_forecast.npz
 
 num_p0: 1
-normalize: true
 
 # Blur estimation parameters (for GeomLoss)
 blur_scale: 0.5

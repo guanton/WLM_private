@@ -8,11 +8,9 @@ num_epochs: 10000
 substeps_per_dt: 1
 dt_eval: 0.2
 integrator: v
-particles_per_batch: 1024
 loss_type: geom_sinkhorn
 geom_p: 1
-vel: bundle # RNA velocity
-
+vel: bundle  # estimated RNA velocity
 
 eval_mode: interpolate
 
@@ -25,7 +23,7 @@ friction: 1.00
 learnable_friction: true
 friction_lr: 1.0e-2
 
-# fixed blur, estimated from data. Kept constant for stability
+# Fixed kernel blur (learned from EB dataset)
 kernel_blur: 1.25
 
 # Logging / outputs
@@ -49,4 +47,4 @@ ema_decay: 0.999
 ema_friction: false
 
 # W&B
-wandb_project: WLM_repro
+wandb_project: eb_wlm

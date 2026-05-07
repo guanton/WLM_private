@@ -6,7 +6,7 @@ eval_mode: forecast
 train_fraction: 0.5
 
 # Training
-num_epochs: 20000
+num_epochs: 100000
 substeps_per_dt: 1
 dt_eval: 0.002
 integrator: v

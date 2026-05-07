@@ -99,12 +99,20 @@ if [[ -f "${data_path}" && "${REGEN_DATA}" != "1" ]]; then
     echo "[run] data exists: ${data_path} (set REGEN_DATA=1 to force regen)"
 else
     echo "[run] generating data -> ${data_path}"
+    DATA_EXTRA=()
+    args=("$@")
+    for ((i=0; i<${#args[@]}; i++)); do
+        if [[ "${args[i]}" == "--set" ]]; then
+            DATA_EXTRA+=( --set "${args[i+1]:-}" )
+            ((i++)) || true
+        fi
+    done
     python -u data_generator.py \
         --config "${DATA_CFG}" \
         --set seed="${SEED}" \
         --set device=cpu \
         --set out="${data_path}" \
-        "$@"
+        "${DATA_EXTRA[@]}"
 fi
 
 # --- 8. Build --set overrides for train.py ---

@@ -1,3 +1,5 @@
+# configs/models/oceans_interpolate.yaml
+# WLM training config for interpolating the small ocean vortex (N=111, T=9).
 
 device: cuda
 
@@ -29,7 +31,7 @@ use_com: false
 gif_frame_skip: 1
 gif_fps: 1
 ckpt_every: 0
-eval_every: 500
+eval_every: 1000
 gif_every: 0
 
 # Model architecture 
@@ -48,7 +50,7 @@ particles_gif: 111
 
 # EMA 
 use_ema: true
-ema_decay: 0.999
+ema_decay: 0.9999
 ema_friction: false
 
 # W&B

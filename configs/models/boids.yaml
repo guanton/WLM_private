@@ -10,9 +10,10 @@ train_fraction: 0.5
 dt_eval: 0.1
 
 substeps_per_dt: 1
-verlet: v
+integrator: v
 
 loss_type: geom_sinkhorn
+geom_p: 1
 vel: bundle
 
 lr: 1.0e-4
@@ -35,12 +36,11 @@ eval_every: 1000
 # model
 arch: attn_flow
 dropout: 0.0
-arch_kwargs:
-  attn_heads: 4
-  attn_hidden_dim: 64
-  attn_layers: 4
-  ff_dim: 512
-  use_time: false
+attn_heads: 4
+attn_hidden_dim: 64
+attn_layers: 4
+ff_dim: 512
+use_time: false
 
-
+wandb_project: boids
 
