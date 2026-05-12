@@ -1,4 +1,7 @@
 import imageio.v2 as imageio
+import matplotlib.patches as mpatches
+from matplotlib.path import Path
+from matplotlib.transforms import Affine2D
 import matplotlib.pyplot as plt
 import torch
 import numpy as np
@@ -30,10 +33,38 @@ TIKZ_RC = {
     "savefig.pad_inches": 0.05,
 }
 
-C_BOID = "#5BA7D9"  # light blue — used for all boids scatter
+C_BOID = "#5BA7D9"  # legacy scatter color
+C_GT = "#1f77b4"  # matplotlib default blue  — Ground Truth
+C_WLM = "#ff7f0e"  # matplotlib default orange — WLM
 
 
 # ── internal helpers ──
+
+def _draw_birds(ax, x, y, u=None, v=None, color=C_GT, size=20, alpha=0.7):
+    """Oriented chevron bird markers. u,v give heading; falls back to rightward if None."""
+
+    verts = np.array([
+        [-1.0, 0.5],
+        [0.0, 0.0],
+        [-1.0, -0.5],
+        [-0.6, 0.0],
+        [-1.0, 0.5],
+    ]) * size * 0.04
+    codes = [Path.MOVETO, Path.LINETO, Path.LINETO, Path.LINETO, Path.CLOSEPOLY]
+    base_path = Path(verts, codes)
+    if u is None or v is None:
+        u = np.ones(len(x));
+        v = np.zeros(len(x))
+    norm = np.sqrt(u ** 2 + v ** 2) + 1e-8
+    u, v = u / norm, v / norm
+    for xi, yi, ui, vi in zip(x, y, u, v):
+        angle = np.degrees(np.arctan2(vi, ui))
+        t = Affine2D().rotate_deg(angle).translate(xi, yi) + ax.transData
+        ax.add_patch(mpatches.PathPatch(
+            base_path, transform=t,
+            facecolor=color, edgecolor="none", alpha=alpha, zorder=3,
+        ))
+
 
 def _get_lims(X_np, pad_frac=0.08):
     """Axis limits from (N, T, 2) array."""
@@ -47,7 +78,6 @@ def _tikz_scatter(ax, x, y, color=C_BOID, s=8, alpha=0.6, label=None):
     """Single scatter with tikz-clean styling."""
     ax.scatter(x, y, s=s, alpha=alpha, c=color, edgecolors="none",
                linewidths=0, rasterized=True, label=label)
-
 
 
 def snapshot_grid(X_np, times, n_cols=5, title="", color=C_BOID):
@@ -66,7 +96,7 @@ def snapshot_grid(X_np, times, n_cols=5, title="", color=C_BOID):
     xlim, ylim = _get_lims(X_np)
 
     fig, axes = plt.subplots(1, n_cols, figsize=(2.8 * n_cols, 2.8),
-                              sharex=True, sharey=True)
+                             sharex=True, sharey=True)
     for i, t_idx in enumerate(idxs):
         ax = axes[i]
         _tikz_scatter(ax, X_np[:, t_idx, 0], X_np[:, t_idx, 1], color=color)
@@ -86,153 +116,134 @@ def snapshot_grid(X_np, times, n_cols=5, title="", color=C_BOID):
 
 def make_gif(X_dict, times, save_path="boids.gif",
              frame_skip=2, fps=10, subsample=None, color=None,
-             train_time=None):
+             train_time=None, V_dict=None):
     """
-    Animated GIF with tikz-clean style. All panels use the same color.
+    Animated GIF with oriented bird markers.
 
-    Args:
-        X_dict: {label: (N, T, 2) np.array}. One panel per key.
-                GT-only: {"Ground Truth": X_gt}
-                Compare:  {"Ground Truth": X_gt, "WLM": X_wlm}
-        times:  (T,) time values
-        save_path: output path
-        frame_skip: render every k-th frame
-        fps: gif framerate
-        subsample: max particles per dataset (None = all)
-        color: scatter color for all panels (default: C_BOID)
-        train_time: if set, frames past this time show "Forecast" tag and
-                    W1 is displayed between first two datasets
+    X_dict:     {label: (N, T, 2) array}. First key = GT, second = WLM.
+    V_dict:     optional {label: (N, T, 2) array} of velocities — used for
+                bird orientation at k=0; finite differences used otherwise.
+    train_time: if set, suptitle shows [Train/Forecast] tag and W1.
+    color:      single color, list of colors, or None (uses C_GT / C_WLM).
     """
     labels = list(X_dict.keys())
+    datasets = [v.copy() for v in X_dict.values()]
+
     if color is None:
-        _colors = ["tab:blue"] + ["tab:orange"] * (len(labels) - 1)
+        _colors = [C_GT] + [C_WLM] * (len(labels) - 1)
     elif isinstance(color, list):
         _colors = color
     else:
         _colors = [color] * len(labels)
-    datasets = [v.copy() for v in X_dict.values()]
-    n_rows = len(labels)
-    is_comparison = (n_rows >= 2)
 
-    # Subsample
     if subsample is not None:
         rng = np.random.default_rng(0)
-        for i in range(n_rows):
+        for i in range(len(datasets)):
             N = datasets[i].shape[0]
             if subsample < N:
                 idx = rng.choice(N, subsample, replace=False)
                 datasets[i] = datasets[i][idx]
 
-    # Axis limits from FIRST dataset only (GT)
-    ref_pts = datasets[0].reshape(-1, 2)
-    ref_pts = ref_pts[np.isfinite(ref_pts).all(axis=1)]
-    lo = np.quantile(ref_pts, 0.005, axis=0)
-    hi = np.quantile(ref_pts, 0.995, axis=0)
+    ref = datasets[0].reshape(-1, 2)
+    ref = ref[np.isfinite(ref).all(axis=1)]
+    lo = np.quantile(ref, 0.005, axis=0)
+    hi = np.quantile(ref, 0.995, axis=0)
     pad = 0.1 * np.maximum(0.5, hi - lo)
     xlim = (lo[0] - pad[0], hi[0] + pad[0])
     ylim = (lo[1] - pad[1], hi[1] + pad[1])
 
-    # Optional: try importing OT for W1, fall back to sliced W2
+    # W1 helper
     _w1_fn = None
-    if is_comparison:
+    if len(datasets) >= 2:
         try:
-            import ot as pot
+            import ot as _ot
+            from scipy.spatial.distance import cdist as _cdist
             def _w1_fn(a, b):
-                from scipy.spatial.distance import cdist
-                M = cdist(a, b, metric="euclidean").astype(np.float64)
+                M = _cdist(a, b, metric="euclidean").astype(np.float64)
                 n, m = M.shape
-                return pot.emd2(np.ones(n) / n, np.ones(m) / m, M)
+                return _ot.emd2(np.ones(n) / n, np.ones(m) / m, M)
         except ImportError:
-            # Fallback: sliced Wasserstein (no extra deps)
             def _w1_fn(a, b, n_proj=50):
-                d = a.shape[1]
-                rng = np.random.default_rng(42)
-                dirs = rng.normal(size=(n_proj, d))
+                rng2 = np.random.default_rng(42)
+                dirs = rng2.normal(size=(n_proj, a.shape[1]))
                 dirs /= np.linalg.norm(dirs, axis=1, keepdims=True)
                 total = 0.0
-                for v in dirs:
-                    pa = np.sort(a @ v)
-                    pb = np.sort(b @ v)
-                    # match sizes by subsampling the larger
-                    n = min(len(pa), len(pb))
-                    total += np.mean(np.abs(pa[:n] - pb[:n]))
+                for vv in dirs:
+                    pa = np.sort(a @ vv);
+                    pb = np.sort(b @ vv)
+                    nn = min(len(pa), len(pb))
+                    total += np.mean(np.abs(pa[:nn] - pb[:nn]))
                 return total / n_proj
 
     T = datasets[0].shape[1]
-    frames = []
-
-    fig, axes = plt.subplots(1, n_rows, figsize=(3.2 * n_rows, 3.2),
-                              squeeze=False)
+    fig, axes = plt.subplots(1, len(labels), figsize=(3.2 * len(labels), 3.2),
+                             squeeze=False)
     axes = axes[0]
-
-    # Set up all axes once so tight_layout computes stable positions
     for r, label in enumerate(labels):
-        ax = axes[r]
-        ax.set_xlim(*xlim)
-        ax.set_ylim(*ylim)
-        ax.set_aspect("equal")
-        ax.set_title(label, fontsize=9, fontweight="medium")
-        ax.tick_params(labelsize=7)
-        if r > 0:
-            ax.tick_params(labelleft=False)
-    fig.suptitle("$t = 0.00$", fontsize=11, y=0.98)
+        axes[r].set_title(label, fontsize=9, fontweight="medium")
     fig.tight_layout(rect=[0, 0, 1, 0.94])
 
-    # Freeze subplot positions — no more tight_layout calls
+    frames = []
     for k in range(0, T, frame_skip):
         t_val = float(times[k]) if times is not None else k
         is_forecast = (train_time is not None) and (t_val > float(train_time))
 
-        for r, (label, data) in enumerate(zip(labels, datasets)):
+        for r, (data, c) in enumerate(zip(datasets, _colors)):
             ax = axes[r]
             ax.clear()
-            ax.set_xlim(*xlim)
-            ax.set_ylim(*ylim)
+            ax.set_xlim(*xlim);
+            ax.set_ylim(*ylim);
             ax.set_aspect("equal")
-            _tikz_scatter(ax, data[:, k, 0], data[:, k, 1],
-                          color=_colors[r], s=10, alpha=0.55)
-            ax.set_title(label, fontsize=9, fontweight="medium")
             ax.tick_params(labelsize=7)
-            if r > 0:
-                ax.tick_params(labelleft=False)
+            if r > 0: ax.tick_params(labelleft=False)
+            ax.set_title(labels[r], fontsize=9, fontweight="medium")
 
-        # Build suptitle
+            x, y = data[:, k, 0], data[:, k, 1]
+            if V_dict is not None and k == 0:
+                vdata = list(V_dict.values())[r]
+                u, v = vdata[:, 0, 0], vdata[:, 0, 1]
+            elif k + 1 < T:
+                u = data[:, k + 1, 0] - x;
+                v = data[:, k + 1, 1] - y
+            elif k > 0:
+                u = x - data[:, k - 1, 0];
+                v = y - data[:, k - 1, 1]
+            else:
+                u, v = np.ones_like(x) * 0.01, np.zeros_like(y)
+
+            _draw_birds(ax, x, y, u=u, v=v, color=c, alpha=0.75)
+
         phase = "Forecast" if is_forecast else "Train"
         title_parts = [f"$t = {t_val:.1f}$"]
-
-        if is_comparison and train_time is not None:
+        if train_time is not None:
             title_parts.append(f"[{phase}]")
-
-        if is_comparison and _w1_fn is not None:
-            gt_k = datasets[0][:, k, :]
-            pred_k = datasets[1][:, k, :]
-            # filter NaN/Inf
-            gt_k = gt_k[np.isfinite(gt_k).all(axis=1)]
-            pred_k = pred_k[np.isfinite(pred_k).all(axis=1)]
+        if _w1_fn is not None:
+            gt_k = datasets[0][:, k, :];
+            gt_k = gt_k[np.isfinite(gt_k).all(1)]
+            pred_k = datasets[1][:, k, :];
+            pred_k = pred_k[np.isfinite(pred_k).all(1)]
             if gt_k.shape[0] > 0 and pred_k.shape[0] > 0:
-                w1 = _w1_fn(gt_k, pred_k)
-                title_parts.append(f"   $W_1 = {w1:.2f}$")
+                title_parts.append(f"  $W_1 = {_w1_fn(gt_k, pred_k):.2f}$")
 
         fig.suptitle("  ".join(title_parts), fontsize=10, y=0.98)
-
         fig.canvas.draw()
-        frame = np.asarray(fig.canvas.buffer_rgba())
-        frames.append(frame.copy())
+        frames.append(np.asarray(fig.canvas.buffer_rgba()).copy())
 
     plt.close(fig)
-
     os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
     imageio.mimsave(save_path, frames, fps=fps, loop=0)
     print(f"Saved: {save_path}  ({len(frames)} frames)")
     return save_path
 
+
 C_FORECAST = "#9B5DE5"  # purple for forecast labels/divider
+
+
 def compare_snapshots(X_gt, X_wlm, times, n_cols=6, subsample=None,
-                      train_time=None):
+                      train_time=None, V_gt=None):
     """Two-row snapshot grid: Ground Truth on top, WLM on bottom.
 
-    If train_time is set, a dashed vertical line separates train/forecast
-    columns, and forecast time labels are colored purple.
+    V_gt: optional (N, T, 2) velocity array — used for bird orientation at t=0.
     """
     N_gt, T, _ = X_gt.shape
     idxs = np.linspace(0, T - 1, n_cols, dtype=int)
@@ -243,41 +254,51 @@ def compare_snapshots(X_gt, X_wlm, times, n_cols=6, subsample=None,
         X_gt_s, X_wlm_s = X_gt[si], X_wlm[si]
     else:
         X_gt_s, X_wlm_s = X_gt, X_wlm
+        si = None
 
-    # Axis limits from GT only
-    ref_pts = X_gt_s.reshape(-1, 2)
-    lo = np.quantile(ref_pts, 0.005, axis=0)
-    hi = np.quantile(ref_pts, 0.995, axis=0)
+    ref = X_gt_s.reshape(-1, 2)
+    lo = np.quantile(ref, 0.005, axis=0)
+    hi = np.quantile(ref, 0.995, axis=0)
     pad = 0.1 * np.maximum(0.5, hi - lo)
     xlim = (lo[0] - pad[0], hi[0] + pad[0])
     ylim = (lo[1] - pad[1], hi[1] + pad[1])
 
     fig, axes = plt.subplots(2, n_cols, figsize=(2.6 * n_cols, 5.2),
-                              sharex=True, sharey=True)
+                             sharex=True, sharey=True)
 
     for col, t_idx in enumerate(idxs):
         t_val = float(times[t_idx])
         is_forecast = (train_time is not None) and (t_val > float(train_time))
         title_color = C_FORECAST if is_forecast else "black"
 
-        for row, (data, label) in enumerate([(X_gt_s, "GT"), (X_wlm_s, "WLM")]):
+        for row, (data, c) in enumerate([(X_gt_s, C_GT), (X_wlm_s, C_WLM)]):
             ax = axes[row, col]
-            c = "tab:blue" if row == 0 else "tab:orange"
-            ax.scatter(data[:, t_idx, 0], data[:, t_idx, 1],
-                       s=10, alpha=0.55, c=c, edgecolors="none", rasterized=True)
-            ax.set_xlim(*xlim)
-            ax.set_ylim(*ylim)
+            ax.set_xlim(*xlim);
+            ax.set_ylim(*ylim);
             ax.set_aspect("equal")
             ax.tick_params(labelsize=6)
-            if col > 0:
-                ax.tick_params(labelleft=False)
+            if col > 0: ax.tick_params(labelleft=False)
+
+            x, y = data[:, t_idx, 0], data[:, t_idx, 1]
+            if t_idx == 0 and V_gt is not None:
+                vg = V_gt[si] if si is not None else V_gt
+                u, v = vg[:, 0, 0], vg[:, 0, 1]
+            elif t_idx + 1 < T:
+                u = data[:, t_idx + 1, 0] - x;
+                v = data[:, t_idx + 1, 1] - y
+            elif t_idx > 0:
+                u = x - data[:, t_idx - 1, 0];
+                v = y - data[:, t_idx - 1, 1]
+            else:
+                u, v = np.ones_like(x) * 0.01, np.zeros_like(y)
+
+            _draw_birds(ax, x, y, u=u, v=v, color=c, alpha=0.75)
+
             if row == 0:
                 ax.set_title(f"$t = {t_val:.1f}$", fontsize=9, color=title_color)
-
-            # Purple border for forecast panels
             if is_forecast:
                 for spine in ax.spines.values():
-                    spine.set_edgecolor(C_FORECAST)
+                    spine.set_edgecolor(C_FORECAST);
                     spine.set_linewidth(1.2)
 
         if col == 0:
@@ -286,28 +307,19 @@ def compare_snapshots(X_gt, X_wlm, times, n_cols=6, subsample=None,
 
     fig.tight_layout(h_pad=0.4, w_pad=0.3)
 
-    # Draw dashed vertical divider between last train and first forecast column
     if train_time is not None:
-        # Find the split: last column where t <= train_time
         t_vals = [float(times[idxs[c]]) for c in range(n_cols)]
-        split_after = None
         for c in range(n_cols - 1):
             if t_vals[c] <= float(train_time) < t_vals[c + 1]:
-                split_after = c
+                bl = axes[0, c].get_position()
+                br = axes[0, c + 1].get_position()
+                x_mid = (bl.x1 + br.x0) / 2.0
+                fig.add_artist(plt.Line2D(
+                    [x_mid, x_mid], [0.0, 1.0],
+                    transform=fig.transFigure, clip_on=False,
+                    color=C_FORECAST, linewidth=1.5, linestyle="--", alpha=0.8,
+                ))
                 break
-
-        if split_after is not None:
-            # Get figure-space x midpoint between the two columns
-            bbox_left = axes[0, split_after].get_position()
-            bbox_right = axes[0, split_after + 1].get_position()
-            x_mid = (bbox_left.x1 + bbox_right.x0) / 2.0
-
-            fig.add_artist(plt.Line2D(
-                [x_mid, x_mid], [0.0, 1.0],
-                transform=fig.transFigure, clip_on=False,
-                color=C_FORECAST, linewidth=1.5, linestyle="--", alpha=0.8,
-            ))
-
     return fig
 
 
@@ -370,7 +382,6 @@ def plot_single_holdout_scatter(
     ax.grid(alpha=0.2)
     fig.tight_layout()
     return fig
-
 
 
 def plot_multi_holdout_scatter(
@@ -774,35 +785,37 @@ def make_compare_gif(
 
     return save_path
 
+
 from typing import Any, Optional
 from pathlib import Path
 from mechanics import pick_integrator
 from potential_energy_models import make_accel_from_potential
 import wandb
 
+
 @torch.no_grad()
 def maybe_gif(
-    step_idx: int,
-    *,
-    gif_every: int,
-    gif_p0_idx: int,
-    particles_gif: Optional[int],
-    gif_frame_skip: int,
-    gif_fps: int,
-    substeps_per_dt: int,
-    integrator_name: str,
-    max_force: Optional[float],
-    model: torch.nn.Module,
-    X_em: torch.Tensor,               # (num_p0,N,T+1,d)
-    time_grid: torch.Tensor,          # (T+1,)
-    dt_base: float,
-    vel_provider,
-    vel_mode: str,
-    V_em: Optional[torch.Tensor],
-    friction: Any,
-    outdir: Path,
-    device: torch.device,
-    wb_run: Optional[Any] = None,
+        step_idx: int,
+        *,
+        gif_every: int,
+        gif_p0_idx: int,
+        particles_gif: Optional[int],
+        gif_frame_skip: int,
+        gif_fps: int,
+        substeps_per_dt: int,
+        integrator_name: str,
+        max_force: Optional[float],
+        model: torch.nn.Module,
+        X_em: torch.Tensor,  # (num_p0,N,T+1,d)
+        time_grid: torch.Tensor,  # (T+1,)
+        dt_base: float,
+        vel_provider,
+        vel_mode: str,
+        V_em: Optional[torch.Tensor],
+        friction: Any,
+        outdir: Path,
+        device: torch.device,
+        wb_run: Optional[Any] = None,
 ) -> None:
     if int(gif_every) <= 0:
         return
