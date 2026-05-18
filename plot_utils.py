@@ -1,6 +1,6 @@
 import imageio.v2 as imageio
 import matplotlib.patches as mpatches
-from matplotlib.path import Path
+from matplotlib.path import Path as MplPath
 from matplotlib.transforms import Affine2D
 import matplotlib.pyplot as plt
 import torch
@@ -50,8 +50,8 @@ def _draw_birds(ax, x, y, u=None, v=None, color=C_GT, size=20, alpha=0.7):
         [-0.6, 0.0],
         [-1.0, 0.5],
     ]) * size * 0.04
-    codes = [Path.MOVETO, Path.LINETO, Path.LINETO, Path.LINETO, Path.CLOSEPOLY]
-    base_path = Path(verts, codes)
+    codes = [MplPath.MOVETO, MplPath.LINETO, MplPath.LINETO, MplPath.LINETO, MplPath.CLOSEPOLY]
+    base_path = MplPath(verts, codes)
     if u is None or v is None:
         u = np.ones(len(x));
         v = np.zeros(len(x))
